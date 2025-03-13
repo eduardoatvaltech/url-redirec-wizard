@@ -24,59 +24,61 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Define Valtech brand colors as constants
-CORAL = "#FF5959"
-BLACK = "#000000"
-WHITE = "#FFFFFF"
-SOFT_BLACK = "#171717" 
-OFF_WHITE = "#F3F2EF"
-GRAY = "#D1D3CA"
-SHADE_GRAY = "#4C4C49"
-OCEAN = "#002FA7"
-MOSS = "#B3FF60"
-EMBER = "#510F1B"
-MIDNIGHT = "#12121A"
-FOREST = "#0D241E"
+# Define improved contrast color palette based on Valtech brand colors
+PRIMARY = "#FF5959"      # Coral - primary brand color
+PRIMARY_DARK = "#E03131" # Darker version of Coral for hover states
+SECONDARY = "#002FA7"    # Ocean - secondary accent
+DARK_BG = "#171717"      # Soft Black for dark backgrounds
+TEXT_DARK = "#000000"    # Black for text on light backgrounds
+TEXT_LIGHT = "#FFFFFF"   # White for text on dark backgrounds
+BG_LIGHT = "#FFFFFF"     # White for card backgrounds
+BG_MEDIUM = "#F0F0F0"    # Light gray for page background
+ACCENT_SUCCESS = "#6BB324" # Green derived from Moss for success indicators
+ACCENT_WARNING = "#FF9800" # Orange for warnings
+ACCENT_ERROR = "#E03131"   # Red for errors
+ACCENT_INFO = "#002FA7"    # Ocean for info
+BORDER_LIGHT = "#D1D3CA"   # Gray for borders
 
-# Custom styling
+# Custom styling with improved contrast
 st.markdown(f"""
 <style>
-    /* Primary Elements */
+    /* Main Background */
     .stApp {{
-        background-color: {OFF_WHITE};
+        background-color: {BG_MEDIUM};
     }}
     
     /* Headers */
     h1, h2, h3 {{
-        color: {SOFT_BLACK};
+        color: {DARK_BG};
         font-weight: 700;
     }}
     
     /* Accent Elements */
     .accent-text {{
-        color: {CORAL};
+        color: {PRIMARY};
         font-weight: 600;
     }}
     
     /* Buttons */
     .stButton button {{
-        background-color: {CORAL};
-        color: {WHITE};
+        background-color: {PRIMARY};
+        color: {TEXT_LIGHT} !important;
         border: none;
+        font-weight: 500;
         border-radius: 4px;
         transition: all 0.3s ease;
     }}
     .stButton button:hover {{
-        background-color: {EMBER};
-        color: {WHITE};
+        background-color: {PRIMARY_DARK};
+        color: {TEXT_LIGHT} !important;
     }}
     
     /* Custom header */
     .header-container {{
         display: flex;
         align-items: center;
-        background-color: {MIDNIGHT};
-        padding: 1rem 2rem;
+        background-color: {DARK_BG};
+        padding: 1.2rem 2rem;
         border-radius: 8px;
         margin-bottom: 2rem;
         box-shadow: 0 4px 6px rgba(0,0,0,0.1);
@@ -84,35 +86,39 @@ st.markdown(f"""
     
     /* Card containers */
     .card-container {{
-        background-color: {WHITE};
+        background-color: {BG_LIGHT};
         padding: 1.5rem;
         border-radius: 8px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-        margin-bottom: 1rem;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        margin-bottom: 1.5rem;
+        border-top: 4px solid {PRIMARY};
     }}
     
     /* Tool tips */
     .tooltip {{
         position: relative;
         display: inline-block;
+        cursor: pointer;
     }}
     
     .tooltip .tooltiptext {{
         visibility: hidden;
         width: 250px;
-        background-color: {SOFT_BLACK};
-        color: {WHITE};
-        text-align: center;
+        background-color: {DARK_BG};
+        color: {TEXT_LIGHT};
+        text-align: left;
         border-radius: 6px;
-        padding: 8px;
+        padding: 10px;
         position: absolute;
         z-index: 1;
         bottom: 125%;
-        left: 50%;
-        margin-left: -125px;
+        left: 0;
+        margin-left: 0;
         opacity: 0;
         transition: opacity 0.3s;
-        font-size: 0.8rem;
+        font-size: 0.9rem;
+        line-height: 1.4;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
     }}
     
     .tooltip:hover .tooltiptext {{
@@ -123,62 +129,75 @@ st.markdown(f"""
     /* Status indicator */
     .status-indicator {{
         display: inline-block;
-        width: 10px;
-        height: 10px;
+        width: 12px;
+        height: 12px;
         border-radius: 50%;
-        margin-right: 5px;
+        margin-right: 6px;
     }}
     
     .status-success {{
-        background-color: {MOSS};
+        background-color: {ACCENT_SUCCESS};
     }}
     
     .status-warning {{
-        background-color: {CORAL};
+        background-color: {ACCENT_WARNING};
     }}
     
     .status-error {{
-        background-color: {EMBER};
+        background-color: {ACCENT_ERROR};
     }}
     
     /* Beta banner */
     .beta-banner {{
-        background-color: {CORAL};
-        color: {WHITE};
-        padding: 5px;
+        background-color: {PRIMARY};
+        color: {TEXT_LIGHT};
+        padding: 8px;
         border-radius: 4px;
         text-align: center;
-        font-size: 0.8rem;
-        margin-bottom: 1rem;
+        font-size: 0.9rem;
+        margin-bottom: 1.5rem;
+        font-weight: 500;
     }}
     
     /* Config controls */
     .config-section {{
-        background-color: {WHITE};
-        padding: 1rem;
+        background-color: {BG_LIGHT};
+        padding: 1.5rem;
         border-radius: 8px;
+        margin-bottom: 1.5rem;
+        border-left: 5px solid {PRIMARY};
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }}
+    
+    /* Section headers */
+    .section-header {{
+        color: {DARK_BG};
+        font-weight: 600;
+        font-size: 1.2rem;
         margin-bottom: 1rem;
-        border-left: 4px solid {CORAL};
+        padding-bottom: 0.5rem;
+        border-bottom: 2px solid {PRIMARY};
     }}
     
     /* File uploader */
     .file-uploader {{
-        border: 2px dashed {GRAY};
+        border: 2px dashed {BORDER_LIGHT};
         border-radius: 8px;
-        padding: 1.5rem;
+        padding: 2rem 1.5rem;
         text-align: center;
-        background-color: {WHITE};
+        background-color: {BG_LIGHT};
         transition: all 0.3s ease;
     }}
     .file-uploader:hover {{
-        border-color: {CORAL};
+        border-color: {PRIMARY};
     }}
     
     /* Results section */
     .results-header {{
-        border-bottom: 2px solid {CORAL};
+        border-bottom: 3px solid {PRIMARY};
         padding-bottom: 0.5rem;
         margin-bottom: 1rem;
+        color: {DARK_BG};
     }}
     
     /* Footer */
@@ -186,55 +205,86 @@ st.markdown(f"""
         text-align: center;
         margin-top: 2rem;
         padding-top: 1rem;
-        border-top: 1px solid {GRAY};
-        color: {SHADE_GRAY};
-        font-size: 0.8rem;
+        border-top: 1px solid {BORDER_LIGHT};
+        color: {DARK_BG};
+        font-size: 0.9rem;
     }}
     
     /* Tabs */
     .stTabs [data-baseweb="tab-list"] {{
-        gap: 2px;
+        gap: 0;
+        border-radius: 8px;
+        background-color: {BG_LIGHT};
+        padding: 5px;
     }}
 
     .stTabs [data-baseweb="tab"] {{
         height: 50px;
-        background-color: {WHITE};
-        border-radius: 4px 4px 0 0;
-        gap: 1px;
-        padding-top: 10px;
-        padding-bottom: 10px;
+        background-color: transparent;
+        border-radius: 4px;
+        gap: 0;
+        padding: 10px 15px;
+        color: {DARK_BG};
+        font-weight: 500;
     }}
 
     .stTabs [aria-selected="true"] {{
-        background-color: {CORAL};
-        color: {WHITE};
+        background-color: {PRIMARY};
+        color: {TEXT_LIGHT} !important;
     }}
     
     /* Metrics */
     .metric-card {{
-        background-color: {WHITE};
+        background-color: {BG_LIGHT};
         border-radius: 8px;
-        padding: 1rem;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        padding: 1.5rem;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.1);
         text-align: center;
+        transition: transform 0.3s ease;
+        border-top: 4px solid {PRIMARY};
+    }}
+    
+    .metric-card:hover {{
+        transform: translateY(-5px);
     }}
     
     .metric-value {{
-        font-size: 2rem;
+        font-size: 2.2rem;
         font-weight: bold;
-        color: {CORAL};
+        color: {PRIMARY};
+        line-height: 1.2;
+        margin-bottom: 0.5rem;
     }}
     
     .metric-label {{
-        font-size: 0.9rem;
-        color: {SHADE_GRAY};
+        font-size: 1rem;
+        color: {DARK_BG};
+        font-weight: 500;
+    }}
+    
+    /* Info boxes */
+    .info-box {{
+        background-color: rgba(0, 47, 167, 0.1);
+        border-left: 4px solid {ACCENT_INFO};
+        padding: 1rem;
+        border-radius: 4px;
+        margin: 1rem 0;
+    }}
+    
+    /* Labels with better contrast */
+    label {{
+        color: {DARK_BG} !important;
+        font-weight: 500 !important;
+    }}
+    
+    /* Progress bar */
+    .stProgress > div > div > div > div {{
+        background-color: {PRIMARY};
     }}
 </style>
 """, unsafe_allow_html=True)
 
 # Helper utility functions (same as in the provided script)
-# These are the core functions from the original script
-
 @lru_cache(maxsize=None)
 def get_translation_table():
     umlaut_map = {'ä': 'ae', 'ö': 'oe', 'ü': 'ue', 'ß': 'ss', 'æ': 'ae', 'ø': 'oe', 'å': 'aa'}
@@ -784,7 +834,7 @@ tab1, tab2, tab3 = st.tabs(["🧙‍♂️ Setup", "🔄 Process", "📊 Results
 
 with tab1:
     st.markdown('<div class="card-container">', unsafe_allow_html=True)
-    st.markdown("### Welcome to the URL Migration Wizard")
+    st.markdown('<div class="section-header">Welcome to the URL Migration Wizard</div>', unsafe_allow_html=True)
     st.write("""
     This tool helps you efficiently match URLs between your legacy website and new website.
     Follow these steps to get started:
@@ -798,7 +848,7 @@ with tab1:
     
     # Configuration section
     st.markdown('<div class="config-section">', unsafe_allow_html=True)
-    st.subheader("Configuration Settings")
+    st.markdown('<div class="section-header">Configuration Settings</div>', unsafe_allow_html=True)
     
     # Initialize session state for configuration
     if 'config' not in st.session_state:
@@ -812,8 +862,8 @@ with tab1:
     with col1:
         st.markdown("""
         <div class="tooltip">
-            Remove Query Parameters
-            <span class="tooltiptext">If enabled, URL query parameters will be removed during matching</span>
+            <strong>Remove Query Parameters</strong>
+            <span class="tooltiptext">If enabled, URL query parameters will be removed during matching. Useful when query parameters don't affect page content.</span>
         </div>
         """, unsafe_allow_html=True)
         config['settings']['remove_query_params'] = st.toggle(
@@ -825,8 +875,8 @@ with tab1:
     with col2:
         st.markdown("""
         <div class="tooltip">
-            Exclude Non-HTML Resources
-            <span class="tooltiptext">If enabled, non-HTML resources like JS, CSS files will be excluded</span>
+            <strong>Exclude Non-HTML Resources</strong>
+            <span class="tooltiptext">When enabled, files like JavaScript, CSS, and API endpoints will be excluded from matching.</span>
         </div>
         """, unsafe_allow_html=True)
         config['settings']['exclude_non_html_resources'] = st.toggle(
@@ -836,15 +886,15 @@ with tab1:
         )
     
     # Language extraction settings
-    st.markdown("#### Language Settings")
+    st.markdown('<div class="section-header" style="font-size: 1.1rem; margin-top: 20px;">Language Settings</div>', unsafe_allow_html=True)
     
     col1, col2 = st.columns(2)
     
     with col1:
         st.markdown("""
         <div class="tooltip">
-            Legacy Website Language Extraction
-            <span class="tooltiptext">Enable language extraction from legacy website URLs</span>
+            <strong>Legacy Website Language Extraction</strong>
+            <span class="tooltiptext">Enable to extract language codes from legacy website URLs (e.g., /en/ for English). Helps ensure matching between same-language pages.</span>
         </div>
         """, unsafe_allow_html=True)
         legacy_lang_enabled = st.toggle(
@@ -870,8 +920,8 @@ with tab1:
     with col2:
         st.markdown("""
         <div class="tooltip">
-            New Website Language Extraction
-            <span class="tooltiptext">Enable language extraction from new website URLs</span>
+            <strong>New Website Language Extraction</strong>
+            <span class="tooltiptext">Enable to extract language codes from new website URLs. Matches will only be made between pages of the same language.</span>
         </div>
         """, unsafe_allow_html=True)
         new_lang_enabled = st.toggle(
@@ -895,7 +945,7 @@ with tab1:
             config['settings']['language_extraction']['new_website']['regex'] = False
     
     # Product ID extraction settings
-    st.markdown("#### Product ID Settings")
+    st.markdown('<div class="section-header" style="font-size: 1.1rem; margin-top: 20px;">Product ID Settings</div>', unsafe_allow_html=True)
     
     # Base product ID settings
     col1, col2 = st.columns(2)
@@ -903,8 +953,8 @@ with tab1:
     with col1:
         st.markdown("""
         <div class="tooltip">
-            Minimum Product ID Length
-            <span class="tooltiptext">Minimum number of characters for a valid product ID</span>
+            <strong>Minimum Product ID Length</strong>
+            <span class="tooltiptext">Sets the minimum character length for a valid product ID. IDs shorter than this will be ignored.</span>
         </div>
         """, unsafe_allow_html=True)
         config['settings']['product_id_extraction']['min_product_id_length'] = st.number_input(
@@ -917,8 +967,8 @@ with tab1:
     with col2:
         st.markdown("""
         <div class="tooltip">
-            Exclude Product IDs
-            <span class="tooltiptext">Product IDs to exclude (comma separated list)</span>
+            <strong>Exclude Product IDs</strong>
+            <span class="tooltiptext">Enter numbers to exclude from product ID matching, separated by commas (e.g., years like 2022, 2023)</span>
         </div>
         """, unsafe_allow_html=True)
         exclude_ids_str = st.text_input(
@@ -936,8 +986,8 @@ with tab1:
     with col1:
         st.markdown("""
         <div class="tooltip">
-            Legacy Website Product ID Regex
-            <span class="tooltiptext">Regular expression to extract product IDs from legacy URLs</span>
+            <strong>Legacy Website Product ID Regex</strong>
+            <span class="tooltiptext">Regular expression to extract product IDs from legacy URLs. Example: \\d{5,} would match 5+ digit numbers.</span>
         </div>
         """, unsafe_allow_html=True)
         config['settings']['product_id_extraction']['legacy_website']['regex'] = st.text_input(
@@ -949,8 +999,8 @@ with tab1:
     with col2:
         st.markdown("""
         <div class="tooltip">
-            New Website Product ID Regex
-            <span class="tooltiptext">Regular expression to extract product IDs from new URLs</span>
+            <strong>New Website Product ID Regex</strong>
+            <span class="tooltiptext">Regular expression to extract product IDs from new URLs. Should match the same IDs as the legacy regex.</span>
         </div>
         """, unsafe_allow_html=True)
         config['settings']['product_id_extraction']['new_website']['regex'] = st.text_input(
@@ -960,15 +1010,15 @@ with tab1:
         )
     
     # Custom extraction ID settings
-    st.markdown("#### Custom ID Settings")
+    st.markdown('<div class="section-header" style="font-size: 1.1rem; margin-top: 20px;">Custom ID Settings</div>', unsafe_allow_html=True)
     
     col1, col2 = st.columns(2)
     
     with col1:
         st.markdown("""
         <div class="tooltip">
-            Legacy Website Custom ID Regex
-            <span class="tooltiptext">Regular expression to extract custom IDs from legacy URLs</span>
+            <strong>Legacy Website Custom ID Regex</strong>
+            <span class="tooltiptext">Alternative pattern to extract custom IDs (article numbers, SKUs, etc.) from legacy URLs.</span>
         </div>
         """, unsafe_allow_html=True)
         config['settings']['custom_extraction_id']['legacy_website']['regex'] = st.text_input(
@@ -980,8 +1030,8 @@ with tab1:
     with col2:
         st.markdown("""
         <div class="tooltip">
-            New Website Custom ID Regex
-            <span class="tooltiptext">Regular expression to extract custom IDs from new URLs</span>
+            <strong>New Website Custom ID Regex</strong>
+            <span class="tooltiptext">Pattern to extract the same custom IDs from new website URLs.</span>
         </div>
         """, unsafe_allow_html=True)
         config['settings']['custom_extraction_id']['new_website']['regex'] = st.text_input(
@@ -991,13 +1041,13 @@ with tab1:
         )
     
     # Fuzzy matching settings
-    st.markdown("#### Fuzzy Matching Settings")
+    st.markdown('<div class="section-header" style="font-size: 1.1rem; margin-top: 20px;">Fuzzy Matching Settings</div>', unsafe_allow_html=True)
     
     # Enable fuzzy matching globally
     st.markdown("""
     <div class="tooltip">
-        Enable Fuzzy Matching
-        <span class="tooltiptext">If disabled, only exact matching will be performed</span>
+        <strong>Enable Fuzzy Matching</strong>
+        <span class="tooltiptext">When enabled, similar content will be matched even if URLs don't match exactly. Useful for content that has been moved or renamed.</span>
     </div>
     """, unsafe_allow_html=True)
     config['settings']['fuzzy_matching']['enabled'] = st.toggle(
@@ -1013,8 +1063,8 @@ with tab1:
         with col1:
             st.markdown("""
             <div class="tooltip">
-                Enable Title Matching
-                <span class="tooltiptext">Match by page title when exact matches fail</span>
+                <strong>Enable Title Matching</strong>
+                <span class="tooltiptext">Match pages with similar titles when exact matches can't be found.</span>
             </div>
             """, unsafe_allow_html=True)
             config['settings']['fuzzy_matching']['title']['enabled'] = st.toggle(
@@ -1027,8 +1077,8 @@ with tab1:
             if config['settings']['fuzzy_matching']['title']['enabled']:
                 st.markdown("""
                 <div class="tooltip">
-                    Title Match Confidence
-                    <span class="tooltiptext">Minimum confidence threshold for title matches (0-1)</span>
+                    <strong>Title Match Confidence</strong>
+                    <span class="tooltiptext">Minimum similarity threshold for title matches. Higher values require more similar titles.</span>
                 </div>
                 """, unsafe_allow_html=True)
                 config['settings']['fuzzy_matching']['title']['min_confidence'] = st.slider(
@@ -1046,8 +1096,8 @@ with tab1:
         with col1:
             st.markdown("""
             <div class="tooltip">
-                Enable H1 Matching
-                <span class="tooltiptext">Match by H1 heading when exact matches fail</span>
+                <strong>Enable H1 Matching</strong>
+                <span class="tooltiptext">Match pages with similar H1 headings when exact matches can't be found.</span>
             </div>
             """, unsafe_allow_html=True)
             config['settings']['fuzzy_matching']['h1']['enabled'] = st.toggle(
@@ -1060,8 +1110,8 @@ with tab1:
             if config['settings']['fuzzy_matching']['h1']['enabled']:
                 st.markdown("""
                 <div class="tooltip">
-                    H1 Match Confidence
-                    <span class="tooltiptext">Minimum confidence threshold for H1 matches (0-1)</span>
+                    <strong>H1 Match Confidence</strong>
+                    <span class="tooltiptext">Minimum similarity threshold for H1 heading matches. Higher values require more similar H1s.</span>
                 </div>
                 """, unsafe_allow_html=True)
                 config['settings']['fuzzy_matching']['h1']['min_confidence'] = st.slider(
@@ -1079,8 +1129,8 @@ with tab1:
         with col1:
             st.markdown("""
             <div class="tooltip">
-                Enable Slug Matching
-                <span class="tooltiptext">Match by URL slug when exact matches fail</span>
+                <strong>Enable Slug Matching</strong>
+                <span class="tooltiptext">Match URLs with similar slugs (last part of URL path) when exact matches can't be found.</span>
             </div>
             """, unsafe_allow_html=True)
             config['settings']['fuzzy_matching']['slug']['enabled'] = st.toggle(
@@ -1093,8 +1143,8 @@ with tab1:
             if config['settings']['fuzzy_matching']['slug']['enabled']:
                 st.markdown("""
                 <div class="tooltip">
-                    Slug Match Confidence
-                    <span class="tooltiptext">Minimum confidence threshold for slug matches (0-1)</span>
+                    <strong>Slug Match Confidence</strong>
+                    <span class="tooltiptext">Minimum similarity threshold for URL slug matches. Higher values require more similar slugs.</span>
                 </div>
                 """, unsafe_allow_html=True)
                 config['settings']['fuzzy_matching']['slug']['min_confidence'] = st.slider(
@@ -1110,6 +1160,7 @@ with tab1:
     st.session_state.config = config
     
     # Export/Import YAML
+    st.markdown('<div class="section-header" style="font-size: 1.1rem; margin-top: 20px;">Save or Load Configuration</div>', unsafe_allow_html=True)
     col1, col2 = st.columns(2)
     
     with col1:
@@ -1135,7 +1186,7 @@ with tab1:
 
 with tab2:
     st.markdown('<div class="card-container">', unsafe_allow_html=True)
-    st.markdown("### Upload Files & Process")
+    st.markdown('<div class="section-header">Upload Files & Process</div>', unsafe_allow_html=True)
     st.write("""
     Upload your crawl files from both your legacy and new websites. The files should contain URLs and metadata 
     (title, meta description, H1) for each page. CSV or Excel formats are supported.
@@ -1150,7 +1201,7 @@ with tab2:
         st.markdown("""
         <div class="tooltip">
             <strong>Legacy Website Crawl</strong>
-            <span class="tooltiptext">Upload a CSV or Excel file with URLs from your legacy website</span>
+            <span class="tooltiptext">Upload a CSV or Excel file with URLs from your legacy website. This should contain all pages you want to redirect.</span>
         </div>
         """, unsafe_allow_html=True)
         
@@ -1163,7 +1214,7 @@ with tab2:
         if legacy_file:
             st.success(f"✅ {legacy_file.name} uploaded")
             
-        st.info("File should contain 'Address', 'Title 1', 'Meta Description 1', and 'H1-1' columns")
+        st.markdown('<div class="info-box">File should contain <code>Address</code>, <code>Title 1</code>, <code>Meta Description 1</code>, and <code>H1-1</code> columns</div>', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
     
     with col2:
@@ -1171,7 +1222,7 @@ with tab2:
         st.markdown("""
         <div class="tooltip">
             <strong>New Website Crawl</strong>
-            <span class="tooltiptext">Upload a CSV or Excel file with URLs from your new website</span>
+            <span class="tooltiptext">Upload a CSV or Excel file with URLs from your new website. These are the destination URLs for redirects.</span>
         </div>
         """, unsafe_allow_html=True)
         
@@ -1184,7 +1235,7 @@ with tab2:
         if new_file:
             st.success(f"✅ {new_file.name} uploaded")
             
-        st.info("File should contain the same column structure as the legacy website file")
+        st.markdown('<div class="info-box">File should contain the same column structure as the legacy website file</div>', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
     
     # Process button
@@ -1196,7 +1247,7 @@ with tab2:
             st.markdown("""
             <div class="tooltip">
                 <strong>Ready to Process!</strong>
-                <span class="tooltiptext">Click the button to start processing files with the current configuration</span>
+                <span class="tooltiptext">Click the button to start processing files with the current configuration. This may take a few minutes for large files.</span>
             </div>
             """, unsafe_allow_html=True)
         else:
@@ -1278,7 +1329,7 @@ with tab2:
 with tab3:
     if 'matches' in st.session_state:
         st.markdown('<div class="card-container">', unsafe_allow_html=True)
-        st.markdown("### URL Migration Results")
+        st.markdown('<div class="section-header">URL Migration Results</div>', unsafe_allow_html=True)
         
         # Display statistics in cards
         stats = st.session_state.match_stats
@@ -1312,9 +1363,9 @@ with tab3:
         st.markdown('</div>', unsafe_allow_html=True)
         st.markdown('<div class="card-container">', unsafe_allow_html=True)
         
-        st.markdown("#### Match Distribution")
+        st.markdown('<div class="section-header">Match Distribution</div>', unsafe_allow_html=True)
         
-        # Create a pie chart for match types
+        # Create a pie chart for match types with better contrast colors
         match_data = {
             'Match Type': ['Exact Matches', 'Fuzzy Matches', 'No Matches'],
             'Count': [stats['exact_matches'], stats['fuzzy_matches'], stats['no_matches']]
@@ -1327,9 +1378,9 @@ with tab3:
             names='Match Type',
             color='Match Type',
             color_discrete_map={
-                'Exact Matches': MOSS,
-                'Fuzzy Matches': CORAL,
-                'No Matches': EMBER
+                'Exact Matches': ACCENT_SUCCESS,
+                'Fuzzy Matches': PRIMARY,
+                'No Matches': ACCENT_ERROR
             },
             hole=0.4
         )
@@ -1343,7 +1394,7 @@ with tab3:
         
         # Results table
         st.markdown('<div class="card-container">', unsafe_allow_html=True)
-        st.markdown("#### URL Mapping Results")
+        st.markdown('<div class="section-header">URL Mapping Results</div>', unsafe_allow_html=True)
         
         # Convert matches to DataFrame for display
         matches_df = pd.DataFrame(st.session_state.matches)
@@ -1394,7 +1445,7 @@ with tab3:
         
     else:
         st.markdown('<div class="card-container">', unsafe_allow_html=True)
-        st.markdown("### Results")
+        st.markdown('<div class="section-header">Results</div>', unsafe_allow_html=True)
         st.info("No results available yet. Please upload files and process them in the Process tab.")
         st.markdown('</div>', unsafe_allow_html=True)
 
