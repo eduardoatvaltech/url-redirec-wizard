@@ -292,6 +292,7 @@ def get_default_config():
           default_language: None
 
       product_id_extraction:
+        enabled: false
         min_product_id_length: 5
         exclude_product_ids: [2019, 2020, 2021, 2022]
         legacy_website:
@@ -300,6 +301,7 @@ def get_default_config():
           regex: ''  
 
       custom_extraction_id:
+        enabled: false
         legacy_website:
           regex: '\\b0*(\\d+)\\b'
         new_website:
@@ -619,30 +621,48 @@ with tabs[0]:
                 value=config['settings']['exclude_non_html_resources'],
                 help="When enabled, URLs that appear to be JavaScript, CSS, or API endpoints will be excluded."
             )
+    
+    # Custom Extraction ID Settings - Now in its own expander
+    with st.expander("Custom Extraction ID Settings"):
+        st.markdown(
+            create_tooltip(
+                "Custom Extraction ID", 
+                "Define regex patterns to extract custom identifier values from URLs."
+            ), 
+            unsafe_allow_html=True
+        )
         
-        with col2:
-            # Custom extraction ID
-            st.markdown(
-                create_tooltip(
-                    "Custom Extraction ID", 
-                    "Define regex patterns to extract custom identifier values from URLs."
-                ), 
-                unsafe_allow_html=True
-            )
+        # Toggle to enable/disable Custom Extraction ID
+        custom_extraction_enabled = st.toggle(
+            "Enable Custom Extraction ID",
+            value=config['settings']['custom_extraction_id']['enabled'],
+            help="When enabled, the system will extract and match URLs based on custom identifiers defined by regex patterns."
+        )
+        config['settings']['custom_extraction_id']['enabled'] = custom_extraction_enabled
+        
+        # Only show regex input fields if enabled
+        if custom_extraction_enabled:
+            col1, col2 = st.columns(2)
             
-            # Legacy website regex
-            config['settings']['custom_extraction_id']['legacy_website']['regex'] = st.text_input(
-                "Legacy Website Regex",
-                value=config['settings']['custom_extraction_id']['legacy_website']['regex'],
-                help="Regular expression pattern to extract identifiers from legacy URLs"
-            )
+            with col1:
+                # Legacy website regex
+                config['settings']['custom_extraction_id']['legacy_website']['regex'] = st.text_input(
+                    "Legacy Website Custom ID Regex",
+                    value=config['settings']['custom_extraction_id']['legacy_website']['regex'],
+                    help="Regular expression pattern to extract identifiers from legacy URLs"
+                )
             
-            # New website regex
-            config['settings']['custom_extraction_id']['new_website']['regex'] = st.text_input(
-                "New Website Regex",
-                value=config['settings']['custom_extraction_id']['new_website']['regex'],
-                help="Regular expression pattern to extract identifiers from new URLs"
-            )
+            with col2:
+                # New website regex
+                config['settings']['custom_extraction_id']['new_website']['regex'] = st.text_input(
+                    "New Website Custom ID Regex",
+                    value=config['settings']['custom_extraction_id']['new_website']['regex'],
+                    help="Regular expression pattern to extract identifiers from new URLs"
+                )
+        else:
+            # If disabled, set regex fields to empty
+            config['settings']['custom_extraction_id']['legacy_website']['regex'] = ''
+            config['settings']['custom_extraction_id']['new_website']['regex'] = ''
     
     with st.expander("Language Settings"):
         st.markdown(
@@ -726,40 +746,53 @@ with tabs[0]:
             unsafe_allow_html=True
         )
         
-        # Minimum product ID length
-        config['settings']['product_id_extraction']['min_product_id_length'] = st.number_input(
-            "Minimum Product ID Length",
-            min_value=1,
-            max_value=20,
-            value=config['settings']['product_id_extraction']['min_product_id_length'],
-            help="Product IDs shorter than this will be ignored"
+        # Toggle to enable/disable Product ID extraction
+        product_id_enabled = st.toggle(
+            "Enable Product ID Extraction",
+            value=config['settings']['product_id_extraction']['enabled'],
+            help="When enabled, the system will extract and match URLs based on product IDs."
         )
+        config['settings']['product_id_extraction']['enabled'] = product_id_enabled
         
-        # Excluded product IDs
-        excluded_ids = st.text_input(
-            "Excluded Product IDs (comma separated)",
-            value=",".join(map(str, config['settings']['product_id_extraction']['exclude_product_ids'])),
-            help="These IDs will be ignored even if they match the pattern (e.g., common years like 2022)"
-        )
-        config['settings']['product_id_extraction']['exclude_product_ids'] = [id.strip() for id in excluded_ids.split(",")]
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            # Legacy website product ID regex
-            config['settings']['product_id_extraction']['legacy_website']['regex'] = st.text_input(
-                "Legacy Website Product ID Regex",
-                value=config['settings']['product_id_extraction']['legacy_website']['regex'],
-                help="Regular expression pattern to extract product IDs from legacy URLs"
+        if product_id_enabled:
+            # Minimum product ID length
+            config['settings']['product_id_extraction']['min_product_id_length'] = st.number_input(
+                "Minimum Product ID Length",
+                min_value=1,
+                max_value=20,
+                value=config['settings']['product_id_extraction']['min_product_id_length'],
+                help="Product IDs shorter than this will be ignored"
             )
-        
-        with col2:
-            # New website product ID regex
-            config['settings']['product_id_extraction']['new_website']['regex'] = st.text_input(
-                "New Website Product ID Regex",
-                value=config['settings']['product_id_extraction']['new_website']['regex'],
-                help="Regular expression pattern to extract product IDs from new URLs"
+            
+            # Excluded product IDs
+            excluded_ids = st.text_input(
+                "Excluded Product IDs (comma separated)",
+                value=",".join(map(str, config['settings']['product_id_extraction']['exclude_product_ids'])),
+                help="These IDs will be ignored even if they match the pattern (e.g., common years like 2022)"
             )
+            config['settings']['product_id_extraction']['exclude_product_ids'] = [id.strip() for id in excluded_ids.split(",")]
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Legacy website product ID regex
+                config['settings']['product_id_extraction']['legacy_website']['regex'] = st.text_input(
+                    "Legacy Website Product ID Regex",
+                    value=config['settings']['product_id_extraction']['legacy_website']['regex'],
+                    help="Regular expression pattern to extract product IDs from legacy URLs"
+                )
+            
+            with col2:
+                # New website product ID regex
+                config['settings']['product_id_extraction']['new_website']['regex'] = st.text_input(
+                    "New Website Product ID Regex",
+                    value=config['settings']['product_id_extraction']['new_website']['regex'],
+                    help="Regular expression pattern to extract product IDs from new URLs"
+                )
+        else:
+            # If disabled, set regex fields to empty
+            config['settings']['product_id_extraction']['legacy_website']['regex'] = ''
+            config['settings']['product_id_extraction']['new_website']['regex'] = ''
     
     with st.expander("Fuzzy Matching Settings"):
         st.markdown(
@@ -1169,6 +1202,7 @@ with tabs[3]:
     
     Adjust the configuration settings to match your specific needs:
     - URL Processing: Control how URLs are processed and cleaned
+    - Custom Extraction ID: Configure regex patterns to extract custom IDs from URLs
     - Language Settings: Configure language code extraction if your site is multilingual
     - Product ID Settings: Set up product ID extraction for e-commerce sites
     - Fuzzy Matching: Configure how URLs are matched based on content similarity
