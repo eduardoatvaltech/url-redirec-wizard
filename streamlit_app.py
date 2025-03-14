@@ -4,6 +4,7 @@ import numpy as np
 import re
 import io
 import yaml
+import unicodedata
 import time
 import plotly.express as px
 import plotly.graph_objects as go
@@ -11,6 +12,7 @@ from urllib.parse import urlparse, urlunparse
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from PIL import Image
+from functools import lru_cache
 
 # --------------------
 # App Setup & Styling
@@ -269,7 +271,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --------------------
-# Helper Functions
+# URL Matching Core Functions
 # --------------------
 
 def img_to_base64(img):
@@ -280,7 +282,7 @@ def img_to_base64(img):
     buffered = BytesIO()
     img.save(buffered, format="PNG")
     return base64.b64encode(buffered.getvalue()).decode()
-    
+
 def create_tooltip(label, tooltip_text):
     """Creates a label with a tooltip"""
     return f"""
@@ -341,108 +343,592 @@ def get_default_config():
     """
     return yaml.safe_load(default_yaml)
 
+# Core URL processing functions
 def clean_url(url, remove_query_params):
-    """Clean URL by removing parameters and normalizing"""
+    """Clean URL by removing parameters, extensions, and normalizing 'www.'"""
     parsed = urlparse(url)
     domain = parsed.netloc.replace('www.', '')
+
+    # Remove file extensions (.html, .aspx, etc.) ONLY if they appear at the END of the path
     clean_path = re.sub(r'\.(html|aspx|php|jsp|htm|cgi|pl)$', '', parsed.path)
+
+    # Keep the query parameters if `remove_query_params` is False
     query = parsed.query if not remove_query_params else ''
+
+    # Rebuild the cleaned URL with or without the query params
     cleaned_url = urlunparse((parsed.scheme, domain, clean_path, '', query, ''))
     return cleaned_url
+
+@lru_cache(maxsize=None)
+def get_translation_table():
+    """Create a translation table for text normalization"""
+    umlaut_map = {'ä': 'ae', 'ö': 'oe', 'ü': 'ue', 'ß': 'ss', 'æ': 'ae', 'ø': 'oe', 'å': 'aa'}
+    return str.maketrans(umlaut_map)
 
 def normalize_string(text, is_slug=False):
     """Normalize text strings for comparison"""
     if pd.isna(text):
         return ""
     text = str(text).lower()
-    # Function implementation as in your script
+    text = unicodedata.normalize('NFKD', text).encode('ASCII', 'ignore').decode('ASCII')
+    text = text.translate(get_translation_table())
+
+    if is_slug:
+        text = re.sub(r'[\s_]+', '-', text)
+        text = re.sub(r'[^a-z0-9-]', '', text).strip('-')
+        text = re.sub(r'-+', '-', text)
+    else:
+        text = re.sub(r'\s+', ' ', text).strip()
+        text = re.sub(r'[^a-z0-9\s]', '', text)
     return text
 
+def process_path(path, query_params, remove_query_params):
+    """Process the URL path into segments and levels"""
+    # If the path is empty or just '/', treat it as the homepage
+    if path == '' or path == '/':
+        return {
+            "full": '/',
+            "segments": [{"value": '/', "position": 0}],
+            "levels": {"level-1": '/'},
+            "slug": {
+                "original": '/',
+                "normalized": '/'
+            }
+        }
+
+    # For other paths, process normally
+    segments = path.strip('/').split('/')
+
+    # Handle query parameters in the slug when `remove_query_params` is False
+    if not remove_query_params and query_params:
+        last_segment = f"{segments[-1]}?{query_params}"
+    else:
+        last_segment = segments[-1]
+
+    return {
+        "full": path,
+        "segments": [{"value": seg, "position": i} for i, seg in enumerate(segments)],
+        "levels": {f"level-{i+1}": '/' + '/'.join(segments[:i+1]) + '/' for i in range(len(segments))},
+        "slug": {
+            "original": last_segment if segments else '',
+            "normalized": normalize_string(last_segment, is_slug=True) if segments else ''
+        }
+    }
+
+def extract_language_from_url(path, config, db_type):
+    """Extract language code from URL path based on configuration"""
+    # Get the language extraction settings from the config for the specific database (legacy/new)
+    language_config = config['settings']['language_extraction'].get(db_type, {})
+
+    # If regex is explicitly set to false in the YAML, return None (no language extraction)
+    if not language_config or language_config.get('regex') is False:
+        return None
+
+    # Extract the regex and default language from the config
+    language_regex = language_config.get('regex', None)
+    default_language = language_config.get('default_language', None)
+
+    # If regex is defined, attempt to match it against the path
+    if language_regex:
+        match = re.match(language_regex, path)
+        if match and match.lastindex and match.group(1):  # Check if the regex has captured a language code
+            return match.group(1)  # Return the matched language (e.g., 'en' or 'fr')
+        elif default_language and default_language != "None":
+            return default_language  # Return default language if no match is found
+
+    return None  # No language found if no regex or match, and no default language is provided
+
+def extract_product_id(text, query, config, db_type):
+    """Extract product ID from URL path or query parameters"""
+    # Ensure text is a string
+    text = str(text) if text is not None else ""
+    
+    # Check if product ID extraction is enabled
+    if not config['settings']['product_id_extraction'].get('enabled', False):
+        return None
+
+    # Get the product_id_extraction settings
+    product_id_config = config['settings'].get('product_id_extraction', {})
+
+    # Get website-specific regex
+    website_regex = product_id_config.get(db_type, {}).get('regex', None)
+
+    # If regex is empty or None, skip product ID extraction
+    if not website_regex:
+        return None
+
+    # Get other settings
+    min_length = product_id_config.get('min_product_id_length', 5)
+    exclude_ids = [str(id) for id in product_id_config.get('exclude_product_ids', [])]
+
+    # Extract from path
+    last_segment = text.strip('/').split('/')[-1] if '/' in text else text
+    product_ids_from_path = re.findall(website_regex, last_segment)
+
+    # Extract from query parameters
+    product_ids_from_query = []
+    for param, value in query.items():
+        if value is not None:
+            ids_in_param = re.findall(website_regex, value)
+            product_ids_from_query.extend(ids_in_param)
+
+    # Combine all potential IDs
+    potential_ids = product_ids_from_path + product_ids_from_query
+
+    # Filter valid IDs
+    valid_product_ids = [pid for pid in potential_ids if len(pid) >= min_length and pid not in exclude_ids]
+
+    return valid_product_ids[0] if valid_product_ids else None
+
+def parse_url(url, remove_query_params, config, db_type):
+    """Parse URLs and extract domain and path details"""
+    # First, clean the URL to remove file extensions
+    cleaned_url = clean_url(url, remove_query_params)
+
+    # Parse the cleaned URL
+    parsed = urlparse(cleaned_url)
+
+    # Extract query parameters
+    query_params = {}
+    if parsed.query:
+        for q in parsed.query.split('&'):
+            if '=' in q:
+                k, v = q.split('=', 1)
+                query_params[k] = v
+            else:
+                query_params[q] = None
+
+    # Process path and extract product ID
+    processed_path = process_path(parsed.path, parsed.query, remove_query_params)
+    product_id = extract_product_id(parsed.path, query_params, config, db_type)
+
+    return {
+        "original_url": cleaned_url,
+        "domain": parsed.netloc,
+        "path": processed_path,
+        "product_id": product_id
+    }
+
+def transform_metadata(row):
+    """Transform metadata (title, meta description, and h1)"""
+    def process_field(value):
+        if pd.isna(value) or value == '':
+            return None, ''  # Return an empty string for normalized fields if no value is found
+        return value, normalize_string(value)
+
+    # Process each metadata field
+    title_original, title_normalized = process_field(row.get('Title 1', ''))
+    meta_description_original, meta_description_normalized = process_field(row.get('Meta Description 1', ''))
+    h1_original, h1_normalized = process_field(row.get('H1-1', ''))
+
+    return {
+        "title": {
+            "original": title_original,
+            "normalized": title_normalized
+        },
+        "meta_description": {
+            "original": meta_description_original,
+            "normalized": meta_description_normalized
+        },
+        "h1": {
+            "original": h1_original,
+            "normalized": h1_normalized
+        }
+    }
+
+def remove_duplicates(data):
+    """Remove duplicates based on path and normalized slug"""
+    seen = set()
+    unique_data = []
+    for entry in data:
+        # Use the path + normalized slug as a unique key
+        key = (entry['path']['full'], entry['path']['slug']['normalized'])
+        if key not in seen:
+            seen.add(key)
+            unique_data.append(entry)
+    return unique_data
+
 def process_uploaded_file(file, remove_query_params, config, db_type):
-    """Process the uploaded crawl file"""
-    # Placeholder for the original script's function
-    # In the full implementation, this would include all the URL processing logic
-    df = pd.read_excel(file) if file.name.endswith(('xls', 'xlsx')) else pd.read_csv(file)
+    """Process the uploaded crawl file into structured data"""
+    # Show progress initially at 0%
+    progress_text = st.text(f"Processing {db_type} data...")
+    progress_bar = st.progress(0)
     
-    # Simulate data processing
-    st.session_state['processing_progress'] = 0.2
-    time.sleep(0.5)
-    st.session_state['processing_progress'] = 0.5
-    time.sleep(0.5)
-    st.session_state['processing_progress'] = 0.8
-    time.sleep(0.5)
-    st.session_state['processing_progress'] = 1.0
+    # Read file based on extension
+    if file.name.endswith(('.xls', '.xlsx')):
+        df = pd.read_excel(file)
+    else:  # Assume CSV
+        df = pd.read_csv(file)
     
-    # This would be replaced with actual data processing from your script
-    return [{"original_address": url, "path": {"full": "/"}, "metadata": {}} for url in df['Address'].tolist()]
+    progress_bar.progress(20)
+    
+    # Check if 'Content Type' column exists and filter if needed
+    if 'Content Type' in df.columns:
+        df['Content Type'] = df['Content Type'].str.lower().str.strip()
+        df = df[df['Content Type'] == 'text/html; charset=utf-8']
+    
+    # Filter out non-HTML resource URLs if configured
+    if config['settings'].get('exclude_non_html_resources', False):
+        exclusion_pattern = r'(js|api|css)(\?|/|$)'
+        df = df[~df['Address'].str.contains(exclusion_pattern, case=False, regex=True)]
+    
+    progress_bar.progress(40)
+    
+    # Ensure 'Address' column exists
+    if 'Address' not in df.columns:
+        st.error(f"Required column 'Address' not found in {db_type} file.")
+        st.stop()
+    
+    # Add custom_extraction_id column if it doesn't exist
+    if 'custom_extraction_id' not in df.columns:
+        df['custom_extraction_id'] = None
+    
+    # Extract custom extraction ID from URLs if enabled
+    if config['settings']['custom_extraction_id'].get('enabled', False):
+        custom_extraction_regex = config['settings']['custom_extraction_id'].get(db_type, {}).get('regex', None)
+        
+        if custom_extraction_regex:
+            def extract_custom_id(text):
+                match = re.search(custom_extraction_regex, str(text))
+                if match:
+                    if match.lastindex:
+                        return match.group(1)
+                    else:
+                        return match.group(0)
+                return None
+            
+            # Extract custom ID from the URL address
+            df['custom_extraction_id'] = df['Address'].apply(extract_custom_id)
+    
+    progress_bar.progress(60)
+    
+    # Transform each row in the DataFrame to our structured format
+    transformed_data = []
+    
+    # Process rows in batches to show progress
+    batch_size = max(1, len(df) // 10)  # 10 progress updates
+    
+    for i in range(0, len(df), batch_size):
+        batch = df.iloc[i:i+batch_size]
+        
+        for _, row in batch.iterrows():
+            # Parse the URL and extract data
+            url_data = parse_url(row.get('Address', ''), remove_query_params, config, db_type)
+            
+            # Extract metadata
+            metadata = transform_metadata(row)
+            
+            # Create the transformed row
+            transformed_row = {
+                "original_address": row.get('Address', ''),
+                "original_url": url_data.get('original_url', None),
+                "domain": url_data.get('domain', None),
+                "path": url_data.get('path', None),
+                "language_code": extract_language_from_url(url_data.get('path', {}).get('full', ''), config, db_type),
+                "product_id": url_data.get('product_id', None),
+                "metadata": metadata,
+                "custom_extraction_id": row.get('custom_extraction_id')
+            }
+            
+            transformed_data.append(transformed_row)
+        
+        # Update progress
+        progress_bar.progress(min(60 + 35 * (i + batch_size) // len(df), 95))
+    
+    # Remove duplicates and finalize
+    unique_data = remove_duplicates(transformed_data)
+    
+    progress_bar.progress(100)
+    progress_text.empty()
+    
+    return unique_data
+
+def ensure_language_code(row):
+    """Ensures that the row has a valid language_code."""
+    language_code = row.get('language_code')
+    return language_code if language_code is not None else ''
+
+def is_language_code_match(legacy_row, new_row, config):
+    """Check if language codes match based on configuration"""
+    # Get language extraction settings from the config
+    language_config = config.get('settings', {}).get('language_extraction', {})
+
+    # If either website has regex set to False, skip language validation
+    legacy_regex = language_config.get('legacy_website', {}).get('regex', None)
+    new_regex = language_config.get('new_website', {}).get('regex', None)
+
+    # If either regex is False, language matching is not required
+    if legacy_regex is False or new_regex is False:
+        return True
+
+    # Get language codes, defaulting to None if not present
+    legacy_lang = legacy_row.get('language_code')
+    new_lang = new_row.get('language_code')
+
+    # If regex is defined but no language found, use default language if specified
+    if legacy_lang is None:
+        legacy_lang = language_config.get('legacy_website', {}).get('default_language')
+        if legacy_lang == "None":
+            legacy_lang = None
+    if new_lang is None:
+        new_lang = language_config.get('new_website', {}).get('default_language')
+        if new_lang == "None":
+            new_lang = None
+
+    # If both languages are None (no language extraction), return True
+    if legacy_lang is None and new_lang is None:
+        return True
+
+    # Return True if languages match
+    return legacy_lang == new_lang
 
 def match_data(legacy_data, new_data, config):
-    """Match legacy URLs to new URLs"""
-    # Placeholder for the matching algorithm
-    # In the full implementation, this would include all the matching logic
-    
-    # Simulate processing
-    st.session_state['matching_progress'] = 0.2
-    time.sleep(0.5)
-    st.session_state['matching_progress'] = 0.5
-    time.sleep(0.5)
-    st.session_state['matching_progress'] = 0.8
-    time.sleep(0.5)
-    st.session_state['matching_progress'] = 1.0
-    
-    # Generate sample results
-    total = len(legacy_data)
-    exact_match_count = int(total * 0.6)
-    fuzzy_match_count = int(total * 0.3)
-    no_match_count = total - exact_match_count - fuzzy_match_count
+    """Match legacy URLs to new URLs using different strategies"""
+    # Show initial progress at 0%
+    progress_text = st.text("Matching URLs...")
+    progress_bar = st.progress(0)
     
     matches = []
     
-    # Generate exact matches
-    for i in range(exact_match_count):
-        if i < len(new_data):
-            matches.append({
-                'legacy_original_address': legacy_data[i]["original_address"],
-                'new_original_address': new_data[i]["original_address"],
-                'confidence_level': 1.0,
-                'matching_method': 'exact_match (slug_normalized)',
-                'legacy_matched_value': 'example-slug',
-                'new_matched_value': 'example-slug',
-                'legacy_language': 'en',
-                'new_language': 'en'
-            })
+    # Convert data to DataFrames for processing
+    legacy_df = pd.DataFrame(legacy_data)
+    new_df = pd.DataFrame(new_data)
     
-    # Generate fuzzy matches
-    for i in range(exact_match_count, exact_match_count + fuzzy_match_count):
-        if i < len(new_data):
-            matches.append({
-                'legacy_original_address': legacy_data[i]["original_address"],
-                'new_original_address': new_data[i % len(new_data)]["original_address"],
-                'confidence_level': round(np.random.uniform(0.70, 0.95), 2),
-                'matching_method': 'fuzzy_match (title_normalized)',
-                'legacy_matched_value': 'example title',
-                'new_matched_value': 'similar title',
-                'legacy_language': 'en',
-                'new_language': 'en'
-            })
+    # Prepare data for matching
+    legacy_df['language_code'] = legacy_df.apply(lambda row: ensure_language_code(row), axis=1)
+    new_df['language_code'] = new_df.apply(lambda row: ensure_language_code(row), axis=1)
     
-    # Generate no matches
-    for i in range(exact_match_count + fuzzy_match_count, total):
+    # Extract normalized data for matching
+    new_df['slug_normalized'] = new_df.apply(lambda row: row['path']['slug']['normalized'], axis=1)
+    new_df['product_id'] = new_df['product_id'].fillna('')
+    new_df['custom_extraction_id'] = new_df['custom_extraction_id'].fillna('')
+    
+    legacy_df['slug_normalized'] = legacy_df.apply(lambda row: row['path']['slug']['normalized'], axis=1)
+    legacy_df['product_id'] = legacy_df['product_id'].fillna('')
+    legacy_df['custom_extraction_id'] = legacy_df['custom_extraction_id'].fillna('')
+    
+    # Extract normalized metadata fields
+    legacy_df['title_normalized'] = legacy_df.apply(
+        lambda row: row['metadata']['title']['normalized'] if row.get('metadata') and row['metadata'].get('title') else '', 
+        axis=1
+    )
+    legacy_df['h1_normalized'] = legacy_df.apply(
+        lambda row: row['metadata']['h1']['normalized'] if row.get('metadata') and row['metadata'].get('h1') else '', 
+        axis=1
+    )
+    
+    new_df['title_normalized'] = new_df.apply(
+        lambda row: row['metadata']['title']['normalized'] if row.get('metadata') and row['metadata'].get('title') else '', 
+        axis=1
+    )
+    new_df['h1_normalized'] = new_df.apply(
+        lambda row: row['metadata']['h1']['normalized'] if row.get('metadata') and row['metadata'].get('h1') else '', 
+        axis=1
+    )
+    
+    progress_bar.progress(20)
+    
+    # 1. Product ID Matching
+    if config['settings']['product_id_extraction'].get('enabled', False):
+        for _, legacy_row in legacy_df[legacy_df['product_id'] != ''].iterrows():
+            matching_new_rows = new_df[
+                (new_df['product_id'] == legacy_row['product_id']) &
+                (new_df['product_id'] != '')
+            ]
+
+            for _, new_row in matching_new_rows.iterrows():
+                if is_language_code_match(legacy_row, new_row, config):
+                    matches.append({
+                        'legacy_original_address': legacy_row['original_address'],
+                        'new_original_address': new_row['original_address'],
+                        'confidence_level': 1.0,
+                        'matching_method': 'exact_match (product_id)',
+                        'legacy_matched_value': legacy_row['product_id'],
+                        'new_matched_value': new_row['product_id'],
+                        'legacy_language': legacy_row['language_code'],
+                        'new_language': new_row['language_code']
+                    })
+    
+    progress_bar.progress(40)
+    
+    # Remove matched legacy rows
+    matched_legacy_urls = [m['legacy_original_address'] for m in matches]
+    unmatched_legacy_df = legacy_df[~legacy_df['original_address'].isin(matched_legacy_urls)]
+    
+    # 2. Custom Extraction ID Matching
+    if config['settings']['custom_extraction_id'].get('enabled', False):
+        for _, legacy_row in unmatched_legacy_df[unmatched_legacy_df['custom_extraction_id'] != ''].iterrows():
+            matching_new_rows = new_df[
+                (new_df['custom_extraction_id'] == legacy_row['custom_extraction_id']) &
+                (new_df['custom_extraction_id'] != '')
+            ]
+
+            for _, new_row in matching_new_rows.iterrows():
+                if is_language_code_match(legacy_row, new_row, config):
+                    matches.append({
+                        'legacy_original_address': legacy_row['original_address'],
+                        'new_original_address': new_row['original_address'],
+                        'confidence_level': 1.0,
+                        'matching_method': 'exact_match (custom_extraction_id)',
+                        'legacy_matched_value': legacy_row['custom_extraction_id'],
+                        'new_matched_value': new_row['custom_extraction_id'],
+                        'legacy_language': legacy_row['language_code'],
+                        'new_language': new_row['language_code']
+                    })
+    
+    progress_bar.progress(60)
+    
+    # Remove matched legacy rows
+    matched_legacy_urls = [m['legacy_original_address'] for m in matches]
+    unmatched_legacy_df = legacy_df[~legacy_df['original_address'].isin(matched_legacy_urls)]
+    
+    # 3. Slug Matching
+    for _, legacy_row in unmatched_legacy_df.iterrows():
+        matching_new_rows = new_df[new_df['slug_normalized'] == legacy_row['slug_normalized']]
+
+        for _, new_row in matching_new_rows.iterrows():
+            if is_language_code_match(legacy_row, new_row, config):
+                matches.append({
+                    'legacy_original_address': legacy_row['original_address'],
+                    'new_original_address': new_row['original_address'],
+                    'confidence_level': 1.0,
+                    'matching_method': 'exact_match (slug_normalized)',
+                    'legacy_matched_value': legacy_row['slug_normalized'],
+                    'new_matched_value': new_row['slug_normalized'],
+                    'legacy_language': legacy_row['language_code'],
+                    'new_language': new_row['language_code']
+                })
+    
+    progress_bar.progress(80)
+    
+    # Remove matched legacy rows
+    matched_legacy_urls = [m['legacy_original_address'] for m in matches]
+    unmatched_legacy_df = unmatched_legacy_df[~unmatched_legacy_df['original_address'].isin(matched_legacy_urls)]
+    
+    # 4. Fuzzy Matching if enabled
+    if config['settings']['fuzzy_matching'].get('enabled', True):
+        fuzzy_config = config['settings']['fuzzy_matching']
+        min_confidence = min(
+            fuzzy_config.get('title', {}).get('min_confidence', 0.65),
+            fuzzy_config.get('h1', {}).get('min_confidence', 0.65),
+            fuzzy_config.get('slug', {}).get('min_confidence', 0.70)
+        )
+        
+        # Initialize vectorizers
+        vectorizers = {}
+        vectors = {}
+        
+        # Create TF-IDF vectors for title matching
+        if fuzzy_config.get('title', {}).get('enabled', True):
+            all_titles = unmatched_legacy_df['title_normalized'].tolist() + new_df['title_normalized'].tolist()
+            vectorizers['title'] = TfidfVectorizer().fit(all_titles)
+            vectors['legacy_title'] = vectorizers['title'].transform(unmatched_legacy_df['title_normalized'])
+            vectors['new_title'] = vectorizers['title'].transform(new_df['title_normalized'])
+        
+        # Create TF-IDF vectors for H1 matching
+        if fuzzy_config.get('h1', {}).get('enabled', True):
+            all_h1s = unmatched_legacy_df['h1_normalized'].tolist() + new_df['h1_normalized'].tolist()
+            vectorizers['h1'] = TfidfVectorizer().fit(all_h1s)
+            vectors['legacy_h1'] = vectorizers['h1'].transform(unmatched_legacy_df['h1_normalized'])
+            vectors['new_h1'] = vectorizers['h1'].transform(new_df['h1_normalized'])
+        
+        # Create TF-IDF vectors for slug matching
+        if fuzzy_config.get('slug', {}).get('enabled', True):
+            all_slugs = unmatched_legacy_df['slug_normalized'].tolist() + new_df['slug_normalized'].tolist()
+            vectorizers['slug'] = TfidfVectorizer().fit(all_slugs)
+            vectors['legacy_slug'] = vectorizers['slug'].transform(unmatched_legacy_df['slug_normalized'])
+            vectors['new_slug'] = vectorizers['slug'].transform(new_df['slug_normalized'])
+        
+        # Loop through unmatched legacy URLs
+        for idx in range(len(unmatched_legacy_df)):
+            legacy_row = unmatched_legacy_df.iloc[idx]
+            best_match = None
+            best_confidence = 0
+            best_method = None
+            best_legacy_value = None
+            best_new_value = None
+            best_new_row = None
+            
+            # Try title matching
+            if fuzzy_config.get('title', {}).get('enabled', True) and 'title' in vectorizers:
+                title_min_confidence = fuzzy_config.get('title', {}).get('min_confidence', min_confidence)
+                if vectors['legacy_title'][idx].nnz > 0:  # Only if legacy title has content
+                    cosine_sim_title = cosine_similarity(vectors['legacy_title'][idx], vectors['new_title']).flatten()
+                    best_title_idx = np.argmax(cosine_sim_title)
+                    if cosine_sim_title[best_title_idx] >= title_min_confidence:
+                        if cosine_sim_title[best_title_idx] > best_confidence:
+                            best_confidence = cosine_sim_title[best_title_idx]
+                            best_method = 'fuzzy_match (title_normalized)'
+                            best_new_row = new_df.iloc[best_title_idx]
+                            best_legacy_value = legacy_row['title_normalized']
+                            best_new_value = best_new_row['title_normalized']
+            
+            # Try h1 matching
+            if fuzzy_config.get('h1', {}).get('enabled', True) and 'h1' in vectorizers:
+                h1_min_confidence = fuzzy_config.get('h1', {}).get('min_confidence', min_confidence)
+                if vectors['legacy_h1'][idx].nnz > 0:  # Only if legacy h1 has content
+                    cosine_sim_h1 = cosine_similarity(vectors['legacy_h1'][idx], vectors['new_h1']).flatten()
+                    best_h1_idx = np.argmax(cosine_sim_h1)
+                    if cosine_sim_h1[best_h1_idx] >= h1_min_confidence:
+                        if cosine_sim_h1[best_h1_idx] > best_confidence:
+                            best_confidence = cosine_sim_h1[best_h1_idx]
+                            best_method = 'fuzzy_match (h1_normalized)'
+                            best_new_row = new_df.iloc[best_h1_idx]
+                            best_legacy_value = legacy_row['h1_normalized']
+                            best_new_value = best_new_row['h1_normalized']
+            
+            # Try slug matching
+            if fuzzy_config.get('slug', {}).get('enabled', True) and 'slug' in vectorizers:
+                slug_min_confidence = fuzzy_config.get('slug', {}).get('min_confidence', min_confidence)
+                if vectors['legacy_slug'][idx].nnz > 0:  # Only if legacy slug has content
+                    cosine_sim_slug = cosine_similarity(vectors['legacy_slug'][idx], vectors['new_slug']).flatten()
+                    best_slug_idx = np.argmax(cosine_sim_slug)
+                    if cosine_sim_slug[best_slug_idx] >= slug_min_confidence:
+                        if cosine_sim_slug[best_slug_idx] > best_confidence:
+                            best_confidence = cosine_sim_slug[best_slug_idx]
+                            best_method = 'fuzzy_match (slug_normalized)'
+                            best_new_row = new_df.iloc[best_slug_idx]
+                            best_legacy_value = legacy_row['slug_normalized']
+                            best_new_value = best_new_row['slug_normalized']
+            
+            # Add the best match if found
+            if best_new_row is not None and is_language_code_match(legacy_row, best_new_row, config):
+                matches.append({
+                    'legacy_original_address': legacy_row['original_address'],
+                    'new_original_address': best_new_row['original_address'],
+                    'confidence_level': float(best_confidence),
+                    'matching_method': best_method,
+                    'legacy_matched_value': best_legacy_value,
+                    'new_matched_value': best_new_value,
+                    'legacy_language': legacy_row['language_code'],
+                    'new_language': best_new_row['language_code']
+                })
+    
+    progress_bar.progress(90)
+    
+    # 5. Add unmatched entries
+    matched_legacy_urls = [m['legacy_original_address'] for m in matches]
+    unmatched_legacy_df = legacy_df[~legacy_df['original_address'].isin(matched_legacy_urls)]
+
+    for _, row in unmatched_legacy_df.iterrows():
         matches.append({
-            'legacy_original_address': legacy_data[i]["original_address"],
+            'legacy_original_address': row['original_address'],
             'new_original_address': None,
             'confidence_level': None,
             'matching_method': 'no_match',
             'legacy_matched_value': None,
             'new_matched_value': None,
-            'legacy_language': 'en',
+            'legacy_language': row['language_code'],
             'new_language': None
         })
+    
+    progress_bar.progress(100)
+    progress_text.empty()
     
     return matches
 
 def calculate_match_statistics(matches):
-    """Calculate match statistics from results"""
+    """Calculate statistics about match results"""
     total_entries = len(matches)
     exact_matches = sum(1 for match in matches if match['matching_method'] and 'exact' in match['matching_method'])
     fuzzy_matches = sum(1 for match in matches if match['matching_method'] and 'fuzzy_match' in match['matching_method'])
@@ -642,7 +1128,7 @@ with tabs[0]:
                 help="When enabled, URLs that appear to be JavaScript, CSS, or API endpoints will be excluded."
             )
     
-    # Custom Extraction ID Settings - Now in its own expander
+    # Custom Extraction ID Settings
     with st.expander("Custom Extraction ID Settings"):
         st.markdown(
             create_tooltip(
@@ -911,12 +1397,8 @@ with tabs[0]:
         )
         
         if analyze_button:
-            with st.spinner("Processing files... This may take several minutes."):
+            with st.spinner("Processing files and matching URLs..."):
                 # Process legacy file
-                st.text("Processing legacy website crawl...")
-                progress_bar = st.progress(0)
-                
-                # Process the legacy website file
                 legacy_data = process_uploaded_file(
                     legacy_file, 
                     config['settings']['remove_query_params'],
@@ -924,10 +1406,8 @@ with tabs[0]:
                     'legacy_website'
                 )
                 st.session_state.legacy_data = legacy_data
-                progress_bar.progress(50)
                 
-                # Process the new website file
-                st.text("Processing new website crawl...")
+                # Process new website file
                 new_data = process_uploaded_file(
                     new_file, 
                     config['settings']['remove_query_params'],
@@ -935,17 +1415,15 @@ with tabs[0]:
                     'new_website'
                 )
                 st.session_state.new_data = new_data
-                progress_bar.progress(100)
                 
-                # Match data
-                st.text("Matching URLs...")
+                # Match the data
                 matches = match_data(legacy_data, new_data, config)
                 st.session_state.matches = matches
                 
-                # Convert matches to DataFrame
+                # Convert matches to DataFrame for easier analysis
                 st.session_state.matches_df = pd.DataFrame(matches)
                 
-                # Calculate statistics
+                # Calculate match statistics
                 st.session_state.statistics = calculate_match_statistics(matches)
                 
                 # Set results flag
@@ -962,9 +1440,6 @@ with tabs[0]:
                     """,
                     unsafe_allow_html=True
                 )
-                
-                # Don't rerun automatically - let user see the success message and navigate manually
-                # st.rerun()  # Removed this line
     else:
         st.info("Please upload both legacy and new website crawl files to run the analysis.")
     
