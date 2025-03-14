@@ -261,6 +261,15 @@ st.markdown("""
 # Helper Functions
 # --------------------
 
+def img_to_base64(img):
+    """Convert PIL Image to base64 string for embedding"""
+    import base64
+    from io import BytesIO
+    
+    buffered = BytesIO()
+    img.save(buffered, format="PNG")
+    return base64.b64encode(buffered.getvalue()).decode()
+    
 def create_tooltip(label, tooltip_text):
     """Creates a label with a tooltip"""
     return f"""
@@ -932,7 +941,7 @@ with tabs[0]:
                 st.session_state.results_ready = True
                 
                 # Navigate to results tab
-                st.experimental_rerun()
+                st.rerun()
     else:
         st.info("Please upload both legacy and new website crawl files to run the analysis.")
     
@@ -1290,12 +1299,4 @@ with tabs[3]:
         """)
     
     st.markdown('</div>', unsafe_allow_html=True)
-    
-# Function to convert PIL Image to base64 string for embedding
-def img_to_base64(img):
-    import base64
-    from io import BytesIO
-    
-    buffered = BytesIO()
-    img.save(buffered, format="PNG")
-    return base64.b64encode(buffered.getvalue()).decode()
+
