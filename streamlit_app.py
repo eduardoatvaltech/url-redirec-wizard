@@ -254,6 +254,49 @@ st.markdown("""
         margin-bottom: 20px;
         font-size: 14px;
     }
+    
+    /* Success message container */
+    .success-container {
+        background-color: #B3FF60;
+        border-radius: 8px;
+        padding: 16px 20px;
+        margin: 20px 0;
+        display: flex;
+        align-items: center;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.05);
+        border-left: 5px solid #0D241E;
+    }
+    
+    .success-icon {
+        font-size: 24px;
+        margin-right: 12px;
+        color: #0D241E;
+    }
+    
+    .success-message {
+        flex-grow: 1;
+        color: #0D241E;
+        font-weight: 500;
+    }
+    
+    /* Results link button */
+    .results-link {
+        display: inline-block;
+        background-color: #002FA7;
+        color: white;
+        padding: 8px 16px;
+        border-radius: 4px;
+        text-decoration: none;
+        font-weight: 500;
+        margin-left: 15px;
+        transition: all 0.2s ease;
+    }
+    
+    .results-link:hover {
+        background-color: #00217A;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        text-decoration: none;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -511,6 +554,12 @@ if 'matching_progress' not in st.session_state:
 if 'results_ready' not in st.session_state:
     st.session_state.results_ready = False
 
+if 'analysis_just_completed' not in st.session_state:
+    st.session_state.analysis_just_completed = False
+
+if 'active_tab' not in st.session_state:
+    st.session_state.active_tab = 0
+
 if 'legacy_data' not in st.session_state:
     st.session_state.legacy_data = None
 
@@ -525,6 +574,11 @@ if 'matches_df' not in st.session_state:
 
 if 'statistics' not in st.session_state:
     st.session_state.statistics = None
+
+# Function to handle tab switching
+def switch_to_results_tab():
+    st.session_state.active_tab = 1
+    st.rerun()
 
 # --------------------
 # App Header
@@ -569,8 +623,34 @@ st.markdown(
 
 tabs = st.tabs(["📤 Upload & Configure", "🔍 Analysis Results", "📊 Data Visualization", "❓ Help"])
 
+# Set the active tab based on session state
+if st.session_state.active_tab > 0:
+    ui_tabs = st.container().previous_element.children[1].tabs
+    ui_tabs[st.session_state.active_tab].button.click()
+    st.session_state.active_tab = 0  # Reset after triggering
+
 with tabs[0]:
     st.header("Upload Files & Configure Settings")
+    
+    # Show success message if analysis was just completed
+    if st.session_state.analysis_just_completed:
+        stats = st.session_state.statistics
+        match_rate = f"{stats['match_rate']*100:.1f}%" if stats else "N/A"
+        
+        st.markdown(f"""
+        <div class="success-container">
+            <div class="success-icon">✅</div>
+            <div class="success-message">
+                Analysis completed successfully! Found matches for {match_rate} of your URLs.
+                <a href="#" class="results-link" onclick="parent.document.querySelectorAll('.stTabs button')[1].click(); return false;">
+                    View Results
+                </a>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Reset the flag after displaying
+        st.session_state.analysis_just_completed = False
     
     # File upload section
     col1, col2 = st.columns(2)
@@ -940,7 +1020,10 @@ with tabs[0]:
                 # Set results flag
                 st.session_state.results_ready = True
                 
-                # Navigate to results tab
+                # Set flag to show the success message
+                st.session_state.analysis_just_completed = True
+                
+                # Rerun to show success message
                 st.rerun()
     else:
         st.info("Please upload both legacy and new website crawl files to run the analysis.")
@@ -1299,4 +1382,3 @@ with tabs[3]:
         """)
     
     st.markdown('</div>', unsafe_allow_html=True)
-
