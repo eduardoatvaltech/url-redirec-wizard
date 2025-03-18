@@ -6,7 +6,7 @@ import io
 import yaml
 import unicodedata
 import time
-import plotly.express as pxx
+import plotly.express as px
 import plotly.graph_objects as go
 from urllib.parse import urlparse, urlunparse
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -500,14 +500,58 @@ def extract_product_id(text, query, config, db_type):
     
     # Store the debug information
     if db_type == 'legacy_website':
-        st.session_state.legacy_product_ids_debug.append(debug_info)
+        if 'legacy_product_ids_debug' in st.session_state:
+            st.session_state.legacy_product_ids_debug.append(debug_info)
     else:
-        st.session_state.new_product_ids_debug.append(debug_info)
+        if 'new_product_ids_debug' in st.session_state:
+            st.session_state.new_product_ids_debug.append(debug_info)
     
     final_id = valid_product_ids[0] if valid_product_ids else None
     debug_info['final_id'] = final_id
     return final_id
 
+def extract_custom_id(text, config, db_type):
+    """Extract custom ID from text with debug information"""
+    # Create a debug info dictionary
+    debug_info = {
+        'url': text,
+        'regex_used': '',
+        'extracted_id': None
+    }
+    
+    # Check if custom extraction is enabled
+    if not config['settings']['custom_extraction_id'].get('enabled', False):
+        return None, debug_info
+    
+    # Get regex pattern for this db_type
+    custom_extraction_regex = config['settings']['custom_extraction_id'].get(db_type, {}).get('regex', '')
+    debug_info['regex_used'] = custom_extraction_regex
+    
+    # If regex is empty, return None
+    if not custom_extraction_regex:
+        return None, debug_info
+    
+    # Apply regex to extract ID
+    match = re.search(custom_extraction_regex, str(text))
+    custom_id = None
+    
+    if match:
+        if match.lastindex:
+            custom_id = match.group(1)
+        else:
+            custom_id = match.group(0)
+    
+    debug_info['extracted_id'] = custom_id
+    
+    # Store debug info
+    if db_type == 'legacy_website':
+        if 'legacy_custom_ids_debug' in st.session_state:
+            st.session_state.legacy_custom_ids_debug.append(debug_info)
+    else:
+        if 'new_custom_ids_debug' in st.session_state:
+            st.session_state.new_custom_ids_debug.append(debug_info)
+    
+    return custom_id, debug_info
 
 def parse_url(url, remove_query_params, config, db_type):
     """Parse URLs and extract domain and path details"""
@@ -537,7 +581,6 @@ def parse_url(url, remove_query_params, config, db_type):
         "path": processed_path,
         "product_id": product_id
     }
-
 
 def transform_metadata(row):
     """Transform metadata (title, meta description, and h1)"""
@@ -615,20 +658,8 @@ def process_uploaded_file(file, remove_query_params, config, db_type):
     
     # Extract custom extraction ID from URLs if enabled
     if config['settings']['custom_extraction_id'].get('enabled', False):
-        custom_extraction_regex = config['settings']['custom_extraction_id'].get(db_type, {}).get('regex', None)
-        
-        if custom_extraction_regex:
-            def extract_custom_id(text):
-                match = re.search(custom_extraction_regex, str(text))
-                if match:
-                    if match.lastindex:
-                        return match.group(1)
-                    else:
-                        return match.group(0)
-                return None
-            
-            # Extract custom ID from the URL address
-            df['custom_extraction_id'] = df['Address'].apply(extract_custom_id)
+        # Extract custom ID from the URL address
+        df['custom_extraction_id'] = df['Address'].apply(lambda text: extract_custom_id(text, config, db_type)[0])
     
     progress_bar.progress(60)
     
@@ -1053,6 +1084,16 @@ if 'matches_df' not in st.session_state:
 if 'statistics' not in st.session_state:
     st.session_state.statistics = None
 
+# Initialize debug data containers
+if 'legacy_product_ids_debug' not in st.session_state:
+    st.session_state.legacy_product_ids_debug = []
+if 'new_product_ids_debug' not in st.session_state:
+    st.session_state.new_product_ids_debug = []
+if 'legacy_custom_ids_debug' not in st.session_state:
+    st.session_state.legacy_custom_ids_debug = []
+if 'new_custom_ids_debug' not in st.session_state:
+    st.session_state.new_custom_ids_debug = []
+
 # --------------------
 # App Header
 # --------------------
@@ -1412,31 +1453,6 @@ with tabs[0]:
                     )
     
     st.markdown('</div>', unsafe_allow_html=True)
-
-    # Add a debug panel for Product ID extraction
-with st.expander("Debug: Product ID Extraction", expanded=False):
-    st.markdown("This panel will show debug information about product ID extraction after you run the analysis.")
-    st.markdown("Toggle this open before running the analysis to see the debug output.")
-    
-    # Create containers for the debug output
-    if 'legacy_product_ids_debug' not in st.session_state:
-        st.session_state.legacy_product_ids_debug = []
-    if 'new_product_ids_debug' not in st.session_state:
-        st.session_state.new_product_ids_debug = []
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        st.subheader("Legacy Product IDs")
-        if st.session_state.legacy_product_ids_debug:
-            debug_df = pd.DataFrame(st.session_state.legacy_product_ids_debug)
-            st.dataframe(debug_df, use_container_width=True)
-    
-    with col2:
-        st.subheader("New Product IDs")
-        if st.session_state.new_product_ids_debug:
-            debug_df = pd.DataFrame(st.session_state.new_product_ids_debug)
-            st.dataframe(debug_df, use_container_width=True)
-
     
     # Run Analysis button
     st.markdown('<div class="css-card">', unsafe_allow_html=True)
@@ -1456,6 +1472,8 @@ with st.expander("Debug: Product ID Extraction", expanded=False):
                 # Clear previous debug information
                 st.session_state.legacy_product_ids_debug = []
                 st.session_state.new_product_ids_debug = []
+                st.session_state.legacy_custom_ids_debug = []
+                st.session_state.new_custom_ids_debug = []
                 
                 # Process legacy file
                 legacy_data = process_uploaded_file(
@@ -1542,6 +1560,51 @@ with tabs[1]:
         st.markdown(f'<div class="metric-value" style="color: #002FA7;">{st.session_state.statistics["match_rate"]*100:.1f}%</div>', unsafe_allow_html=True)
         st.markdown('<div class="metric-label">Overall Match Rate</div>', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
+        
+        # Debug section - moved from Upload & Configure tab to here
+        with st.expander("Debug: ID Extraction", expanded=False):
+            st.markdown("This panel shows debug information about ID extraction performed during the analysis.")
+            
+            debug_tabs = st.tabs(["Product IDs", "Custom IDs"])
+            
+            with debug_tabs[0]:  # Product IDs tab
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.subheader("Legacy Product IDs")
+                    if st.session_state.legacy_product_ids_debug:
+                        debug_df = pd.DataFrame(st.session_state.legacy_product_ids_debug)
+                        st.dataframe(debug_df, use_container_width=True)
+                    else:
+                        st.info("No product ID extraction debug data available for legacy URLs.")
+                
+                with col2:
+                    st.subheader("New Product IDs")
+                    if st.session_state.new_product_ids_debug:
+                        debug_df = pd.DataFrame(st.session_state.new_product_ids_debug)
+                        st.dataframe(debug_df, use_container_width=True)
+                    else:
+                        st.info("No product ID extraction debug data available for new URLs.")
+            
+            with debug_tabs[1]:  # Custom IDs tab
+                if config['settings']['custom_extraction_id'].get('enabled', False):
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.subheader("Legacy Custom IDs")
+                        if st.session_state.legacy_custom_ids_debug:
+                            debug_df = pd.DataFrame(st.session_state.legacy_custom_ids_debug)
+                            st.dataframe(debug_df, use_container_width=True)
+                        else:
+                            st.info("No custom ID extraction debug data available for legacy URLs.")
+                    
+                    with col2:
+                        st.subheader("New Custom IDs")
+                        if st.session_state.new_custom_ids_debug:
+                            debug_df = pd.DataFrame(st.session_state.new_custom_ids_debug)
+                            st.dataframe(debug_df, use_container_width=True)
+                        else:
+                            st.info("No custom ID extraction debug data available for new URLs.")
+                else:
+                    st.info("Custom Extraction ID is not enabled in the configuration.")
         
         # Results table
         st.subheader("URL Mappings")
