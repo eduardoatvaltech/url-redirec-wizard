@@ -6,7 +6,7 @@ import io
 import yaml
 import unicodedata
 import time
-import plotly.express as px
+import plotly.express as pxx
 import plotly.graph_objects as go
 from urllib.parse import urlparse, urlunparse
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -439,9 +439,18 @@ def extract_language_from_url(path, config, db_type):
     return None  # No language found if no regex or match, and no default language is provided
 
 def extract_product_id(text, query, config, db_type):
-    """Extract product ID from URL path or query parameters"""
+    """Extract product ID from URL path or query parameters with debug output"""
     # Ensure text is a string
     text = str(text) if text is not None else ""
+    
+    # Create a debug info dictionary
+    debug_info = {
+        'url': text,
+        'regex_used': '',
+        'path_segment': '',
+        'extracted_ids': [],
+        'final_id': None
+    }
     
     # Check if product ID extraction is enabled
     if not config['settings']['product_id_extraction'].get('enabled', False):
@@ -450,8 +459,9 @@ def extract_product_id(text, query, config, db_type):
     # Get the product_id_extraction settings
     product_id_config = config['settings'].get('product_id_extraction', {})
 
-    # Get website-specific regex - use the regex directly from the website config
+    # Get website-specific regex
     website_regex = product_id_config.get(db_type, {}).get('regex', '')
+    debug_info['regex_used'] = website_regex
     
     # If regex is empty, skip product ID extraction
     if not website_regex:
@@ -461,34 +471,43 @@ def extract_product_id(text, query, config, db_type):
     min_length = product_id_config.get('min_product_id_length', 5)
     exclude_ids = [str(id) for id in product_id_config.get('exclude_product_ids', [])]
 
-    # Debug output
-    print(f"Extracting product ID from {db_type} URL: {text}")
-    print(f"Using regex: {website_regex}")
-    print(f"Query params: {query}")
-
     # 1. Extract from path - look for numbers in the last path segment
     last_segment = text.strip('/').split('/')[-1] if '/' in text else text
+    debug_info['path_segment'] = last_segment
+    
+    # For testing, also try with the full URL text
+    product_ids_from_fullurl = re.findall(website_regex, text)
     product_ids_from_path = re.findall(website_regex, last_segment)
-    print(f"IDs from path: {product_ids_from_path}")
-
-    # 2. Extract from query parameters - look in values of all query params
+    debug_info['extracted_ids_full_url'] = product_ids_from_fullurl
+    debug_info['extracted_ids_path'] = product_ids_from_path
+    
+    # 2. Extract from query parameters
     product_ids_from_query = []
     for param, value in query.items():
         if value is not None:
-            ids_in_param = re.findall(website_regex, value)
+            ids_in_param = re.findall(website_regex, param + '=' + value)
             product_ids_from_query.extend(ids_in_param)
     
-    print(f"IDs from query: {product_ids_from_query}")
-
+    debug_info['extracted_ids_query'] = product_ids_from_query
+    
     # Combine all potential IDs
     potential_ids = product_ids_from_path + product_ids_from_query
-    print(f"Potential IDs: {potential_ids}")
+    debug_info['potential_ids'] = potential_ids
 
     # Filter valid IDs
     valid_product_ids = [pid for pid in potential_ids if len(pid) >= min_length and pid not in exclude_ids]
-    print(f"Valid IDs: {valid_product_ids}")
+    debug_info['valid_ids'] = valid_product_ids
+    
+    # Store the debug information
+    if db_type == 'legacy_website':
+        st.session_state.legacy_product_ids_debug.append(debug_info)
+    else:
+        st.session_state.new_product_ids_debug.append(debug_info)
+    
+    final_id = valid_product_ids[0] if valid_product_ids else None
+    debug_info['final_id'] = final_id
+    return final_id
 
-    return valid_product_ids[0] if valid_product_ids else None
 
 def parse_url(url, remove_query_params, config, db_type):
     """Parse URLs and extract domain and path details"""
@@ -1393,6 +1412,31 @@ with tabs[0]:
                     )
     
     st.markdown('</div>', unsafe_allow_html=True)
+
+    # Add a debug panel for Product ID extraction
+with st.expander("Debug: Product ID Extraction", expanded=False):
+    st.markdown("This panel will show debug information about product ID extraction after you run the analysis.")
+    st.markdown("Toggle this open before running the analysis to see the debug output.")
+    
+    # Create containers for the debug output
+    if 'legacy_product_ids_debug' not in st.session_state:
+        st.session_state.legacy_product_ids_debug = []
+    if 'new_product_ids_debug' not in st.session_state:
+        st.session_state.new_product_ids_debug = []
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("Legacy Product IDs")
+        if st.session_state.legacy_product_ids_debug:
+            debug_df = pd.DataFrame(st.session_state.legacy_product_ids_debug)
+            st.dataframe(debug_df, use_container_width=True)
+    
+    with col2:
+        st.subheader("New Product IDs")
+        if st.session_state.new_product_ids_debug:
+            debug_df = pd.DataFrame(st.session_state.new_product_ids_debug)
+            st.dataframe(debug_df, use_container_width=True)
+
     
     # Run Analysis button
     st.markdown('<div class="css-card">', unsafe_allow_html=True)
@@ -1409,6 +1453,10 @@ with tabs[0]:
         
         if analyze_button:
             with st.spinner("Processing files and matching URLs..."):
+                # Clear previous debug information
+                st.session_state.legacy_product_ids_debug = []
+                st.session_state.new_product_ids_debug = []
+                
                 # Process legacy file
                 legacy_data = process_uploaded_file(
                     legacy_file, 
