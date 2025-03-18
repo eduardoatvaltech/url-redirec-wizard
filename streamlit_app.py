@@ -450,10 +450,10 @@ def extract_product_id(text, query, config, db_type):
     # Get the product_id_extraction settings
     product_id_config = config['settings'].get('product_id_extraction', {})
 
-    # Get website-specific regex
-    website_regex = product_id_config.get(db_type, {}).get('regex', None)
-
-    # If regex is empty or None, skip product ID extraction
+    # Get website-specific regex - use the regex directly from the website config
+    website_regex = product_id_config.get(db_type, {}).get('regex', '')
+    
+    # If regex is empty, skip product ID extraction
     if not website_regex:
         return None
 
@@ -461,22 +461,32 @@ def extract_product_id(text, query, config, db_type):
     min_length = product_id_config.get('min_product_id_length', 5)
     exclude_ids = [str(id) for id in product_id_config.get('exclude_product_ids', [])]
 
-    # Extract from path
+    # Debug output
+    print(f"Extracting product ID from {db_type} URL: {text}")
+    print(f"Using regex: {website_regex}")
+    print(f"Query params: {query}")
+
+    # 1. Extract from path - look for numbers in the last path segment
     last_segment = text.strip('/').split('/')[-1] if '/' in text else text
     product_ids_from_path = re.findall(website_regex, last_segment)
+    print(f"IDs from path: {product_ids_from_path}")
 
-    # Extract from query parameters
+    # 2. Extract from query parameters - look in values of all query params
     product_ids_from_query = []
     for param, value in query.items():
         if value is not None:
             ids_in_param = re.findall(website_regex, value)
             product_ids_from_query.extend(ids_in_param)
+    
+    print(f"IDs from query: {product_ids_from_query}")
 
     # Combine all potential IDs
     potential_ids = product_ids_from_path + product_ids_from_query
+    print(f"Potential IDs: {potential_ids}")
 
     # Filter valid IDs
     valid_product_ids = [pid for pid in potential_ids if len(pid) >= min_length and pid not in exclude_ids]
+    print(f"Valid IDs: {valid_product_ids}")
 
     return valid_product_ids[0] if valid_product_ids else None
 
@@ -488,7 +498,7 @@ def parse_url(url, remove_query_params, config, db_type):
     # Parse the cleaned URL
     parsed = urlparse(cleaned_url)
 
-    # Extract query parameters
+    # Extract query parameters as a dictionary
     query_params = {}
     if parsed.query:
         for q in parsed.query.split('&'):
