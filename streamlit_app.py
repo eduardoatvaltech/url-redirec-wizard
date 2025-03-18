@@ -519,6 +519,7 @@ def parse_url(url, remove_query_params, config, db_type):
         "product_id": product_id
     }
 
+
 def transform_metadata(row):
     """Transform metadata (title, meta description, and h1)"""
     def process_field(value):
